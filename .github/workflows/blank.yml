@@ -1,0 +1,68 @@
+name: Cloud PC KZ - Tailscale
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-pc:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Instalar Tailscale
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $msi = "$env:TEMP\tailscale.msi"
+
+          Invoke-WebRequest `
+            -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" `
+            -OutFile $msi
+
+          Start-Process msiexec.exe `
+            -ArgumentList "/i `"$msi`" /quiet /norestart" `
+            -Wait
+
+      - name: Conectar ao Tailscale
+        shell: pwsh
+        env:
+          TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          if (-not $env:TS_AUTHKEY) {
+            throw "Configure o segredo TS_AUTHKEY no GitHub."
+          }
+
+          $tailscale = "$env:ProgramFiles\Tailscale\tailscale.exe"
+
+          Start-Service Tailscale
+
+          & $tailscale up `
+            --auth-key="$env:TS_AUTHKEY" `
+            --hostname="cloud-pc-kz-${{ github.run_id }}"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Não foi possível conectar ao Tailscale."
+          }
+
+          $ip = & $tailscale ip -4
+
+          Write-Host "=== CLOUD PC #KZ ==="
+          Write-Host "IP Tailscale: $ip"
+          Write-Host "Usuário Windows: $env:USERNAME"
+          Write-Host "Sessão máxima: 6 horas"
+          Write-Host "Configure o RDP e as credenciais antes de conectar."
+
+      - name: Manter sessão ativa
+        shell: pwsh
+        run: |
+          $end = (Get-Date).AddHours(5.5)
+
+          while ((Get-Date) -lt $end) {
+            Start-Sleep -Seconds 30
+          }
